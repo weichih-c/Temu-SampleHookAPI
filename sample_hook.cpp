@@ -73,6 +73,16 @@ int CreateThread_call(void *opaque);
 int CreateThread_ret(void *opaque);
 int TerminateThread_call(void *opaque);
 int TerminateThread_ret(void *opaque);
+int RtlAdjustPrivilege_call(void *opaque);
+int RtlAdjustPrivilege_ret(void *opaque);
+int NtQuerySystemInformation_call(void *opaque);
+int NtQuerySystemInformation_ret(void *opaque);
+int NtQueryInformationProcess_call(void *opaque);
+int NtQueryInformationProcess_ret(void *opaque);
+
+// --- memory
+int ReadProcessMemory_call(void *opaque);
+int ReadProcessMemory_ret(void *opaque);
 
 // --- handle
 int CloseHandle_call(void *opaque);
@@ -146,6 +156,9 @@ uint32_t print_procInfo(uint32_t pInfo); // return the new spawn process's id
 void print_procAccess(uint32_t access);
 void print_fileAccess(uint32_t access);
 void print_fileDisopsition(uint32_t disposition);
+void print_adjustPrivilege(uint32_t privilege);
+void print_systemInformationClass(uint32_t systemInformationClass);
+void print_informationProcess(uint32_t processInformationClass);
 void hkey2str(uint32_t hkey, char* str);
 void print_regData(int dwtype, int dwLen, uint32_t lpData);
 
@@ -174,6 +187,15 @@ hook_t hooks[] =
   {(char*)"kernel32.dll", (char*)"OpenThread", OpenThread_call, 0},
   {(char*)"kernel32.dll", (char*)"CreateThread", CreateThread_call, 0},
   {(char*)"kernel32.dll", (char*)"TerminateThread", TerminateThread_call, 0},
+  {(char*)"ntdll.dll", (char*)"RtlAdjustPrivilege", RtlAdjustPrivilege_call, 0},
+  {(char*)"ntdll.dll", (char*)"NtQuerySystemInformation", NtQuerySystemInformation_call, 0},
+  {(char*)"ntdll.dll", (char*)"ZwQuerySystemInformation", NtQuerySystemInformation_call, 0},
+  {(char*)"ntdll.dll", (char*)"NtQueryInformationProcess", NtQueryInformationProcess_call, 0},
+  {(char*)"ntdll.dll", (char*)"ZwQueryInformationProcess", ZwQueryInformationProcess_call, 0},
+
+
+// Memory
+  {(char*)"kernel32.dll", (char*)"ReadProcessMemory", ReadProcessMemory_call, 0},
 
 // Handle
   {(char*)"kernel32.dll", (char*)"CloseHandle", CloseHandle_call, 0},
@@ -302,6 +324,34 @@ typedef struct {
   clock_t tick;
   uint32_t hThread;
 } terminatethread_t;
+
+typedef struct {
+  uint32_t hook_handle;
+  clock_t tick;
+  uint32_t privilege;
+  uint32_t enable;
+  uint32_t currentThread;
+} rtladjustprivilege_t;
+
+typedef struct {
+  uint32_t hook_handle;
+  clock_t tick;
+  uint32_t systemInformationClass;
+} ntquerysysteminformation_t;
+
+typedef struct {
+  uint32_t hook_handle;
+  clock_t tick;
+  uint32_t processInformationClass;
+} ntqueryinformationprocess_t;
+
+/* Memory Struct */ 
+
+typedef struct {
+  uint32_t hook_handle;
+  clock_t tick;
+  uint32_t hProcess;
+} readprocessmemory_t;
 
 /* Handle Struct */
 
@@ -757,6 +807,104 @@ void print_fileDisposition(uint32_t disposition)
   }
 }
 
+void print_adjustPrivilege(uint32_t privilege)
+{
+	WRITE("tracehooklog", "privilege=");
+  switch(privilege)
+  {
+    case 0x00000008:
+      WRITE("tracehooklog", "SE_SECURITY_PRIVILEGE\n");
+      break;
+    case 0x00000009:
+      WRITE("tracehooklog", "SE_TAKE_OWNERSHIP_PRIVILEGE\n");
+      break;
+    case 0x00000012:  
+      WRITE("tracehooklog", "SE_RESTORE_PRIVILEGE\n");
+      break;
+    case 0x00000014:  
+      WRITE("tracehooklog", "SE_DEBUG_PRIVILEGE\n");
+      break;	
+     case 0x0000001B: 
+      WRITE("tracehooklog", "SE_ENABLE_DELEGATION_PRIVILEGE\n");
+      break;	
+     default:
+      WRITE("tracehooklog", "Uncaught_Privilege:%lx\n", privilege);
+      break;
+  }
+}
+
+void print_systemInformationClass(uint32_t systemInformationClass)
+{
+  WRITE("tracehooklog", "RETRIEVED_SYSTEM_INFORMATION=");
+  switch(systemInformationClass)
+  {
+    case 0x00000000:
+      WRITE("tracehooklog", "SystemBasicInformation\n");
+      break;
+    case 0x00000001:
+      WRITE("tracehooklog", "SystemProcessorInformation\n");
+      break;
+    case 0x00000002:  
+      WRITE("tracehooklog", "SystemPerformanceInformation\n");
+      break;
+    case 0x00000003:  
+      WRITE("tracehooklog", "SystemTimeOfDayInformation\n");
+      break;  
+    case 0x00000005: 
+      WRITE("tracehooklog", "SystemProcessInformation\n");
+      break; 
+    case 0x00000008:
+      WRITE("tracehooklog", "SystemProcessorPerformanceInformation\n");
+      break;
+    case 0x00000017:
+      WRITE("tracehooklog", "SystemInterruptInformation\n");
+      break;
+    case 0x00000021:  
+      WRITE("tracehooklog", "SystemExceptionInformation\n");
+      break;
+    case 0x00000025:  
+      WRITE("tracehooklog", "SystemRegistryQuotaInformation\n");
+      break;  
+    case 0x0000002D: 
+      WRITE("tracehooklog", "SystemLookasideInformation\n");
+      break;  
+    
+    default:
+      WRITE("tracehooklog", "Uncaught_INFORMATION:%lx\n",systemInformationClass);
+      break;
+  }
+}
+
+void print_informationProcess(uint32_t processInformationClass)
+{
+  WRITE("tracehooklog", "RETRIEVED_PROCESS_INFORMATION=");
+  switch(processInformationClass)
+  {
+    case 0x00000000:
+      WRITE("tracehooklog", "ProcessBasicInformation\n");
+      break;
+    case 0x00000007:
+      WRITE("tracehooklog", "ProcessDebugPort\n");
+      break;
+    case 0x0000001A:  
+      WRITE("tracehooklog", "ProcessWow64Information\n");
+      break;
+    case 0x0000001B:  
+      WRITE("tracehooklog", "ProcessImageFileName\n");
+      break;  
+    case 0x0000001D: 
+      WRITE("tracehooklog", "ProcessBreakOnTermination\n");
+      break; 
+    case 0x0000004B:
+      WRITE("tracehooklog", "ProcessSubsystemInformation\n");
+      break;
+    
+    default:
+      WRITE("tracehooklog", "Uncaught_INFORMATION:%lx\n",processInformationClass);
+      break;
+  }
+}
+
 
 //======== LoadLibrary ==========
 int LoadLibrary_call(void *opaque)
@@ -802,6 +950,231 @@ int LoadLibrary_ret(void *opaque)
   WRITE("tracehooklog", "#%ld\nLoadLibrary\nlpFileName=%s\n", s->tick, str);
   print_Eax(NONZERO);
 
+  /* Remove return hook */
+  hookapi_remove_hook(s->hook_handle);
+
+  /* Free structure used to pass info between call and return hooks */
+  if (s) free(s);
+
+  return 0;
+}
+
+//======== RtlAdjustPrivilege ==========
+int RtlAdjustPrivilege_call(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  uint32_t esp;
+  uint32_t buf[8]; // Assumes that all stack parameters are 4-byte long
+  int read_err = 0;
+
+  /* If not tracing yet, return */
+  if (tracepid == 0) return 0;
+
+  /* Read stack starting at ESP */
+  read_reg(esp_reg, &esp);
+  read_err = read_mem(esp, sizeof(buf), (unsigned char*)buf);
+  if (read_err) return 0;
+
+  /*
+
+	NTSTATUS WINAPI RtlAdjustPrivilege ( 
+	1  _In_  ULONG  privilege,		// adjust to which privilege 
+	2  _In_  BOOLEAN  enable,		// open-close the privilege
+	3  _In_	 BOOLEAN  currentThread,	// true-current thread; false-whole process
+	  _Out_  PBOOLEAN  enabled 	// Whether privilege was previously enabled or disabled
+	);
+
+  */
+
+  /* Store parameters so that they can be used by return hook */
+  rtladjustprivilege_t *s = (rtladjustprivilege_t*)calloc(1,sizeof(rtladjustprivilege_t));
+  if (s == NULL) return 0;
+
+  s->privilege = buf[1];
+  s->enable = buf[2];
+  s->currentThread = buf[3];
+
+  s->hook_handle = hookapi_hook_return(buf[0], RtlAdjustPrivilege_ret, s, sizeof(rtladjustprivilege_t));
+  s->tick = clock();
+
+  return 0;
+}
+
+int RtlAdjustPrivilege_ret(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  rtladjustprivilege_t *s = (rtladjustprivilege_t *)opaque;
+
+  if(is_tracing) //MIKE: note _bot_() might change is_tracing
+  {
+  	WRITE("tracehooklog", "#%ld\nRtlAdjustPrivilege\n", s->tick);
+
+  	print_adjustPrivilege(s->privilege);
+  	if(s->enable == 0)
+  		WRITE("tracehooklog", "EnablePrivilege=TRUE\n");
+  	else
+  		WRITE("tracehooklog", "EnablePrivilege=FALSE\n");
+
+  	if(s->currentThread == 0)
+  		WRITE("tracehooklog", "AdjustTarget=CurrentThread\n");
+  	else
+  		WRITE("tracehooklog", "AdjustTarget=WholeProcess\n");
+
+	uint32_t eax = 0;
+	read_reg(eax_reg, &eax);
+	if(eax!=0)
+		WRITE("tracehooklog", "Return=FAILURE %lx\n",eax);	// record eax value
+	else
+		WRITE("tracehooklog", "Return=SUCCESS\n");
+
+    // print_Eax(NONZERO);
+  }
+  
+  /* Remove return hook */
+  hookapi_remove_hook(s->hook_handle);
+
+  /* Free structure used to pass info between call and return hooks */
+  if (s) free(s);
+
+  return 0;
+}
+
+//======== NtQuerySystemInformation_call ==========
+int NtQuerySystemInformation_call(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  uint32_t esp;
+  uint32_t buf[8]; // Assumes that all stack parameters are 4-byte long
+  int read_err = 0;
+
+  /* If not tracing yet, return */
+  if (tracepid == 0) return 0;
+
+  /* Read stack starting at ESP */
+  read_reg(esp_reg, &esp);
+  read_err = read_mem(esp, sizeof(buf), (unsigned char*)buf);
+  if (read_err) return 0;
+
+  /*
+
+  NTSTATUS WINAPI NtQuerySystemInformation( 
+  1  _In_      SYSTEM_INFORMATION_CLASS  SystemInformationClass,   // specified class in enum SYSTEM_INFORMATION_CLASS
+    _Inout_     PVOID                   SystemInformation,        // A pointer to a buffer that receives information
+    _In_        ULONG                   SystemInformationLength,
+    _Out_opt_   PULONG                  ReturnLength 
+  );
+
+  */
+
+  /* Store parameters so that they can be used by return hook */
+  ntquerysysteminformation_t *s = (ntquerysysteminformation_t*)calloc(1,sizeof(ntquerysysteminformation_t));
+  if (s == NULL) return 0;
+
+  s->privilege = buf[1];
+
+  s->hook_handle = hookapi_hook_return(buf[0], NtQuerySystemInformation_ret, s, sizeof(ntquerysysteminformation_t));
+  s->tick = clock();
+
+  return 0;
+}
+
+int NtQuerySystemInformation_ret(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  ntquerysysteminformation_t *s = (ntquerysysteminformation_t *)opaque;
+
+  if(is_tracing) //MIKE: note _bot_() might change is_tracing
+  {
+    WRITE("tracehooklog", "#%ld\nNtQuerySystemInformation\n", s->tick);
+
+    print_systemInformationClass(s->systemInformationClass);
+
+    uint32_t eax = 0;
+    read_reg(eax_reg, &eax);
+    if(eax!=0)
+      WRITE("tracehooklog", "Return=FAILURE %lx\n",eax);  // record eax value
+    else
+      WRITE("tracehooklog", "Return=SUCCESS\n");
+
+    // print_Eax(NONZERO);
+  }
+  
+  /* Remove return hook */
+  hookapi_remove_hook(s->hook_handle);
+
+  /* Free structure used to pass info between call and return hooks */
+  if (s) free(s);
+
+  return 0;
+}
+
+//======== NtQueryInformationProcess_call ==========
+int NtQueryInformationProcess_call(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  uint32_t esp;
+  uint32_t buf[8]; // Assumes that all stack parameters are 4-byte long
+  int read_err = 0;
+
+  /* If not tracing yet, return */
+  if (tracepid == 0) return 0;
+
+  /* Read stack starting at ESP */
+  read_reg(esp_reg, &esp);
+  read_err = read_mem(esp, sizeof(buf), (unsigned char*)buf);
+  if (read_err) return 0;
+
+  /*
+
+  NTSTATUS WINAPI NtQueryInformationProcess( 
+    _In_        HANDLE              ProcessHandle, // A handle to the process is retrieved
+  2  _In_        PROCESSINFOCLASS  ProcessInformationClass, // The type of process information to be retrieved
+    _Out_       PVOID               ProcessInformation,   
+    _In_        ULONG               ProcessInformationLength,   
+    _Out_opt_   PULONG              ReturnLength 
+  );
+
+  */
+
+  /* Store parameters so that they can be used by return hook */
+  ntqueryinformationprocess_t *s = (ntqueryinformationprocess_t*)calloc(1,sizeof(ntqueryinformationprocess_t));
+  if (s == NULL) return 0;
+
+  s->privilege = buf[2];
+
+  s->hook_handle = hookapi_hook_return(buf[0], NtQueryInformationProcess_ret, s, sizeof(ntqueryinformationprocess_t));
+  s->tick = clock();
+
+  return 0;
+}
+
+int NtQueryInformationProcess_ret(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  ntqueryinformationprocess_t *s = (ntqueryinformationprocess_t *)opaque;
+
+  if(is_tracing) //MIKE: note _bot_() might change is_tracing
+  {
+    WRITE("tracehooklog", "#%ld\nNtQueryInformationProcess\n", s->tick);
+
+    print_informationProcess(s->processInformationClass);
+
+    uint32_t eax = 0;
+    read_reg(eax_reg, &eax);
+    if(eax!=0)
+      WRITE("tracehooklog", "Return=FAILURE %lx\n",eax);  // record eax value
+    else
+      WRITE("tracehooklog", "Return=SUCCESS\n");
+
+    // print_Eax(NONZERO);
+  }
+  
   /* Remove return hook */
   hookapi_remove_hook(s->hook_handle);
 
@@ -1764,6 +2137,81 @@ int TerminateThread_ret(void *opaque)
 
   return 0;
 }
+
+
+//======== ReadProcessMemory ==========
+int ReadProcessMemory_call(void *opaque)
+{
+  if(!is_tracing) return 0; //MIKE: handle is an __in !! hook all proc? but I don't think so.
+
+  uint32_t esp;
+  uint32_t buf[5]; // Assumes that all stack parameters are 4-byte long
+  int read_err = 0;
+
+  /* If not tracing yet, return */
+  if (tracepid == 0) return 0;
+
+  /* Read stack starting at ESP */
+  read_reg(esp_reg, &esp);
+  read_err = read_mem(esp, sizeof(buf), (unsigned char*)buf);
+  if (read_err) return 0;
+
+  /*
+	BOOL WINAPI ReadProcessMemory( 
+	1	_In_  		HANDLE  	hProcess, 
+		_In_  		LPCVOID 	lpBaseAddress,
+		_Out_ 	LPVOID  	lpBuffer, 
+		_In_  		SIZE_T  	nSize, 
+		_Out_		SIZE_T  	*lpNumberOfBytesRead 
+	); 
+
+  */
+  /* Store parameters so that they can be used by return hook */
+  readprocessmemory_t *s = (readprocessmemory_t*)calloc(1,sizeof(readprocessmemory_t));
+  if (s == NULL) return 0;
+
+  s->hProcess = buf[1];
+ 
+  s->hook_handle = hookapi_hook_return(buf[0], ReadProcessMemory_ret, s, sizeof(readprocessmemory_t));
+  s->tick = clock();
+
+  return 0;
+}
+
+int ReadProcessMemory_ret(void *opaque)
+{
+  if(!is_tracing) return 0;
+
+  readprocessmemory_t *s = (readprocessmemory_t *)opaque;
+  
+  if(is_tracing)
+  {
+    string proc_name;
+    if(find_proc_handle(s->hProcess, &proc_name))
+    {
+      WRITE("tracehooklog", "#%ld\nReadProcessMemory\nprocName=%s\n", s->tick, proc_name.c_str());
+      
+      uint32_t eax = 0;
+      read_reg(eax_reg, &eax);
+      
+      if(eax==0)
+        WRITE("tracehooklog", "Return=FAILURE\n");  // failure
+      else
+        WRITE("tracehooklog", "Return=SUCCESS\n");  // success
+
+      // print_Eax(NONZERO);
+    }
+  }
+
+  /* Remove return hook */
+  hookapi_remove_hook(s->hook_handle);
+
+  /* Free structure used to pass info between call and return hooks */
+  if (s) free(s);
+
+  return 0;
+}
+
 
 //======== CloseHandle ==========
 int CloseHandle_call(void *opaque)
