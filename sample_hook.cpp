@@ -191,7 +191,7 @@ hook_t hooks[] =
   {(char*)"ntdll.dll", (char*)"NtQuerySystemInformation", NtQuerySystemInformation_call, 0},
   {(char*)"ntdll.dll", (char*)"ZwQuerySystemInformation", NtQuerySystemInformation_call, 0},
   {(char*)"ntdll.dll", (char*)"NtQueryInformationProcess", NtQueryInformationProcess_call, 0},
-  {(char*)"ntdll.dll", (char*)"ZwQueryInformationProcess", ZwQueryInformationProcess_call, 0},
+  {(char*)"ntdll.dll", (char*)"ZwQueryInformationProcess", NtQueryInformationProcess_call, 0},
 
 
 // Memory
@@ -1073,7 +1073,7 @@ int NtQuerySystemInformation_call(void *opaque)
   ntquerysysteminformation_t *s = (ntquerysysteminformation_t*)calloc(1,sizeof(ntquerysysteminformation_t));
   if (s == NULL) return 0;
 
-  s->privilege = buf[1];
+  s->systemInformationClass = buf[1];
 
   s->hook_handle = hookapi_hook_return(buf[0], NtQuerySystemInformation_ret, s, sizeof(ntquerysysteminformation_t));
   s->tick = clock();
@@ -1145,7 +1145,7 @@ int NtQueryInformationProcess_call(void *opaque)
   ntqueryinformationprocess_t *s = (ntqueryinformationprocess_t*)calloc(1,sizeof(ntqueryinformationprocess_t));
   if (s == NULL) return 0;
 
-  s->privilege = buf[2];
+  s->processInformationClass = buf[2];
 
   s->hook_handle = hookapi_hook_return(buf[0], NtQueryInformationProcess_ret, s, sizeof(ntqueryinformationprocess_t));
   s->tick = clock();
@@ -2145,7 +2145,7 @@ int ReadProcessMemory_call(void *opaque)
   if(!is_tracing) return 0; //MIKE: handle is an __in !! hook all proc? but I don't think so.
 
   uint32_t esp;
-  uint32_t buf[5]; // Assumes that all stack parameters are 4-byte long
+  uint32_t buf[8]; // Assumes that all stack parameters are 4-byte long
   int read_err = 0;
 
   /* If not tracing yet, return */
@@ -2186,6 +2186,8 @@ int ReadProcessMemory_ret(void *opaque)
   
   if(is_tracing)
   {
+    WRITE("tracehooklog", "#%ld\nReadProcessMemory\n", s->tick);
+
     string proc_name;
     if(find_proc_handle(s->hProcess, &proc_name))
     {
